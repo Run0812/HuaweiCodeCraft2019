@@ -362,16 +362,6 @@ class Road(object):
             # 没有位置进入
             return None
 
-    # def is_blocked(self, block, pre_block):
-    #     pos, car = block['pos'], block['car']
-    #     speed = min(car.speed, self.speed)
-    #     next_pos = pos + speed  # 最远位置
-    #     pre_pos, pre_car = pre_block['pos'], pre_block['car']
-    #     if pre_block is not None and next_pos >= pre_pos:
-    #         return True
-    #     else:
-    #         return False
-
 
     def lane_schedule(self, lane):
         """
@@ -528,11 +518,8 @@ class Schedule(object):
             logging.info("------------TIME:%d----------" % (TIME))
             # 调度一步
             self.step()
-            # 调用洋哥的方法输出一个上路车列表
+            # 获得上路车列表
             this_round_waiting_cars = motor_cade.make_cade()
-            # 安排车辆上路 todo：康哥
-            # def path(car):
-            #     return ShortestPath(car.from_v, car.to_v, CROSS_DICT)
             def path(car):
                 return ShortestPath(car, CROSS_DICT)
             self.put_car_on_road(this_round_waiting_cars, path)
@@ -549,6 +536,7 @@ class Schedule(object):
                 ans.write(s)
         return
 
+    # init
     def read_file(self, car_path, road_path, cross_path):
         global CAR_DICT, ROAD_DICT, CROSS_DICT, TIME
         CAR_DICT = dict_generate(Car, car_path)
@@ -576,7 +564,6 @@ class Motorcade(object):
                 last_index = i
                 self.current_last_id =  self.car_list_plan_time[i].id
 
-
     def is_aim_place_crowded(self, car):
         # 降低未来卡死可能性
         # 检测当前车目的地
@@ -586,15 +573,6 @@ class Motorcade(object):
             return True
         return False
 
-
-    def is_dep_place_crowded(self, car):
-        # 降低立刻卡死可能性
-        # 检测当前车出发地
-        check_cross = CROSS_DICT[car.from_v]
-        # 如果第一条路拥堵，则不安排上路
-
-        # onto_road会返回上路是否成功的标记
-        pass
 
     def make_cade(self):
         global TIME
@@ -609,9 +587,9 @@ class Motorcade(object):
                 break
         return car_candidate
 
-    def receive(self,back_car):
-        for back_car_id in back_car:
-            CAR_DICT[back_car_id].is_out = False
+    # def receive(self,back_car):
+    #     for back_car_id in back_car:
+    #         CAR_DICT[back_car_id].is_out = False
 
 
 
@@ -620,21 +598,3 @@ logging.basicConfig(level=logging.DEBUG,
                     format='[%(asctime)s] %(levelname)s [%(funcName)s: %(filename)s, %(lineno)d] %(message)s',
                     datefmt='%Y-%m-%d %H:%M:%S',
                     filemode='a')
-# *** data init ***#
-# car_path = '../1-map-training-3/car.txt'
-# road_path = '../1-map-training-3/road.txt'
-# cross_path = '../1-map-training-3/cross.txt'
-# answer_path = '../1-map-training-3/answer.txt'
-# CAR_DICT = dict_generate(Car, car_path)
-# ROAD_DICT = dict_generate(Road, road_path)
-# CROSS_DICT = dict_generate(Cross, cross_path)
-# TIME = 0
-# map_construct(ROAD_DICT, CROSS_DICT)
-# sch = Schedule()
-# sch.all_cars = len(CAR_DICT)
-# # sch.read_file(car_path, road_path, cross_path)
-# motor_cade = Motorcade(20)
-# # process
-# sch.calculator(motor_cade)
-# # to write output file
-# sch.output(answer_path)
