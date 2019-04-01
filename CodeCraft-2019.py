@@ -30,7 +30,7 @@ def main():
     import trafficmap
     sch = trafficmap.Schedule()
     sch.read_file(car_path, road_path, cross_path)
-    motor_cade = trafficmap.Motorcade(30)
+    motor_cade = trafficmap.Motorcade(20)
 # process
     sch.calculator(motor_cade)
 # to write output file
