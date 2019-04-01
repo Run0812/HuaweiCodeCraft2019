@@ -2,6 +2,9 @@ from findPath import ShortestPath
 from dataread import dict_generate
 from dataread import map_construct
 import logging
+import math
+
+
 class Car(object):
 
     def __init__(self, id, from_v, to_v, speed, planTime):
@@ -138,6 +141,8 @@ class Car(object):
         # 路上车辆-1
         schedule.cars_on_road -= 1 # 调度器属性
         schedule.cars_arrived += 1
+        logging.info('CAR {} arrives. Total arrive:{}'.format(self.id, schedule.cars_arrived))
+        # print(self.id, 'arrived', schedule.cars_arrived)
         # 目的地前往计数
         CROSS_DICT[self.to_v].car_heading_to -= 1
         return
@@ -182,6 +187,7 @@ class Car(object):
             logging.info('Car {} cannot get on the road {} NO EMPTY'.format(self.id, next_road.id))
             # print('Car {} cannot get on the road {} NO EMPTY'.format(self.id, next_road.id))
             return -2
+
 
 class Cross(object):
     """
@@ -278,6 +284,22 @@ class Road(object):
             logging.info("Road.choose_channel(cross_id, condition) with wrong args")
             # print("Road.choose_channel(cross_id, condition) with wrong args")
 
+    def get_empty_blocks_num(self, to_v):
+        channels = self.choose_channel(to_v, 'output')
+        empty_blocks = 0
+        for lane in channels:
+            if lane:
+                empty_blocks += lane[-1]['pos']
+            else:
+                empty_blocks += self.length
+        return empty_blocks
+
+    def get_crowd_p(self, to_v, hyper_P):
+        empty = self.get_empty_blocks_num(to_v)
+        total = self.channel_limit * self.length
+        crowd_p = math.exp((total - empty / total) * hyper_P)
+        return crowd_p
+
     def get_equ_len(self, to_v):
         """
         L* = sum(res_length * road speed / current speed) / car_number
@@ -292,7 +314,8 @@ class Road(object):
             for block in lane:
                 car, pos = block['car'], block['pos']
                 cur_car_speed = min(car.speed, front_car_speed)
-                L += (self.length - pos - 1) * self.speed / cur_car_speed
+                crowd_p = self.get_crowd_p(to_v, 0.8)
+                L += (self.length - pos - 1) * self.speed / cur_car_speed * crowd_p
                 front_car_speed = cur_car_speed
         return L / car_number
 
@@ -361,6 +384,16 @@ class Road(object):
         else:
             # 没有位置进入
             return None
+
+    # def is_blocked(self, block, pre_block):
+    #     pos, car = block['pos'], block['car']
+    #     speed = min(car.speed, self.speed)
+    #     next_pos = pos + speed  # 最远位置
+    #     pre_pos, pre_car = pre_block['pos'], pre_block['car']
+    #     if pre_block is not None and next_pos >= pre_pos:
+    #         return True
+    #     else:
+    #         return False
 
 
     def lane_schedule(self, lane):
@@ -448,14 +481,14 @@ class Schedule(object):
                 next_round_cross_id.append(cross_id)
         return next_round_cross_id
 
-    def put_car_on_road(self, cars, path): # todo:test
+    def put_car_on_road(self, cars_and_path): # todo:test
         # 上路器
         # 循环列表上路
         # ID升序调度
-        for car_id in sorted(cars):
+        for car_id, weight, path in sorted(cars_and_path, key = lambda l:l[1]):
             # 调用康哥findpath找到路径 设置car的plan_path
             cur_car = CAR_DICT[car_id]
-            cur_car.plan_path = path(cur_car)
+            cur_car.plan_path = path
             # 调用car.on_road
             res = cur_car.onto_road(self)
             if res == -2:
@@ -491,25 +524,25 @@ class Schedule(object):
             if self.dead and unfinished_cross_id:
                 print("DEAD!!! @ %d" % (TIME))
                 logging.info("DEAD!!! @ %d" % (TIME))
-                # todo:启动卡死回退
+                # return -1
         return
 
-    def simulator(self, answer_path):
-        global TIME
-        # 读文件
-        ANSWER = {}
-        with open(answer_path, 'r') as ans:
-            ans.readline()
-            for line in ans:
-                car_id, car_fact_time, *path = line[1:-2].split(',')
-                ANSWER[car_fact_time] = {car_id: path}
-        while self.cars_arrived:
-            TIME += 1
-            self.step()
-            # 获得上路车列表 todo:
-            cars_waiting_onto_road = ANSWER[TIME] # todo:有问题
-            self.put_car_on_road(cars_waiting_onto_road.keys(), lambda k:cars_waiting_onto_road[k.id])
-        return
+    # def simulator(self, answer_path):
+    #     global TIME
+    #     # 读文件
+    #     ANSWER = {}
+    #     with open(answer_path, 'r') as ans:
+    #         ans.readline()
+    #         for line in ans:
+    #             car_id, car_fact_time, *path = line[1:-2].split(',')
+    #             ANSWER[car_fact_time] = {car_id: path}
+    #     while self.cars_arrived:
+    #         TIME += 1
+    #         self.step()
+    #         # 获得上路车列表 todo:
+    #         cars_waiting_onto_road = ANSWER[TIME] # todo:有问题
+    #         self.put_car_on_road(cars_waiting_onto_road.keys(), lambda k:cars_waiting_onto_road[k.id])
+    #     return
 
     def calculator(self, motor_cade): # todo:test
         global TIME
@@ -518,11 +551,8 @@ class Schedule(object):
             logging.info("------------TIME:%d----------" % (TIME))
             # 调度一步
             self.step()
-            # 获得上路车列表
-            this_round_waiting_cars = motor_cade.make_cade()
-            def path(car):
-                return ShortestPath(car, CROSS_DICT)
-            self.put_car_on_road(this_round_waiting_cars, path)
+            this_round_waiting_cars = motor_cade.make_cade(self)
+            self.put_car_on_road(this_round_waiting_cars)
         return
 
     def output(self, answer_path):
@@ -536,9 +566,8 @@ class Schedule(object):
                 ans.write(s)
         return
 
-    # init
     def read_file(self, car_path, road_path, cross_path):
-        global CAR_DICT, ROAD_DICT, CROSS_DICT, TIME
+        global CAR_DICT, ROAD_DICT, CROSS_DICT, TIME, THRESHOLD, SAVE_PATH
         CAR_DICT = dict_generate(Car, car_path)
         ROAD_DICT = dict_generate(Road, road_path)
         CROSS_DICT = dict_generate(Cross, cross_path)
@@ -547,49 +576,116 @@ class Schedule(object):
         self.all_cars = len(CAR_DICT)
         return
 
+    # def handleStuck(self):
+    #     global CAR_DICT, ROAD_DICT, CROSS_DICT, TIME, THRESHOLD
+    #     with shelve.open(SAVE_PATH) as db:
+    #         states = db['states']
+    #         while states:
+    #             if states[-1][-1] == TIME:
+    #                 states.pop()
+    #             else:
+    #                 break
+    #         CAR_DICT, ROAD_DICT, CROSS_DICT, TIME = states.pop()
+    #         db['states'] = states
+    #         THRESHOLD = TIME + 5
+    #         return
+    #
+    # def storeStates(self):
+    #     global TIME
+    #     if TIME % 5 == 0:  # 每五个时刻存一下
+    #         with shelve.open(SAVE_PATH) as db:
+    #             states = db['states']
+    #             states.append([CAR_DICT, ROAD_DICT, CROSS_DICT, TIME])
+    #             db['states'] = states
+
+
 class Motorcade(object):
 
-    def __init__(self, limit = 500):
-        self.limit_num = limit  # 车辆限制数目 todo:设置方法能够自动根据地图大小调整
-        self.current_id = None   # 记录未出发的车辆的第一个车
+    def __init__(self, limit=500):
+        self.limit_num = limit  # 车辆限制数目
+        self.current_id = None  # 记录未出发的车辆的第一个车
         self.current_last_id = None  # 记录当前时间，最后一辆能够出发的车的ID
         self.car_list_plan_time = sorted(CAR_DICT.keys(), key=lambda d: CAR_DICT[d].plan_time)
-        #self.car_pool=car_list
-        # self.current_time = current   # 当前时间
+        # self.car_list_plan_time = list(CAR_DICT.keys())
+        self.car_from_v = self.option_from_v()  # 按照地点分类
+        self.togo_num = 50  # 将要出发的车的总数
+        self.road_total_num = len(ROAD_DICT)  # 路的总数
 
     def get_last_id(self):
         last_index = 0
-        for i in range(len( self.car_list_plan_time)):
-            if CAR_DICT[ self.car_list_plan_time[i]].plan_time <= TIME and i > last_index and not CAR_DICT[self.car_list_plan_time[i]].is_out :
+        for i in range(len(self.car_list_plan_time)):
+            if CAR_DICT[self.car_list_plan_time[i]].plan_time <= TIME and i > last_index and not CAR_DICT[
+                self.car_list_plan_time[i]].is_out:
                 last_index = i
-                self.current_last_id =  self.car_list_plan_time[i].id
+                self.current_last_id = self.car_list_plan_time[i].id
 
-    def is_aim_place_crowded(self, car):
-        # 降低未来卡死可能性
-        # 检测当前车目的地
-        check_cross =  CROSS_DICT[car.to_v]
-        if check_cross.car_heading_to >= 20:
-            # 如果目的地拥挤，则不安排上路
-            return True
-        return False
+    def aim_place_diff(self):
+        pass
 
+    def option_from_v(self):  # 按照出发地点分类
+        dic = {}
+        for car_id in self.car_list_plan_time:
+            dic.setdefault(CAR_DICT[car_id].from_v, []).append(car_id)
+        return dic
 
-    def make_cade(self):
+    def make_cade(self, sch):
         global TIME
         car_candidate = []
-        for car_id in  self.car_list_plan_time:
-            if len(car_candidate) < self.limit_num:
-                cur_car = CAR_DICT[car_id]
-                if cur_car.plan_time <= TIME and not cur_car.is_out and not self.is_aim_place_crowded(cur_car):
-                    car_candidate.append(car_id)  # 增加准备上车的ID
-                    # CAR_DICT[car_id].is_out = True  # 将车辆是否出发的标志位设置为已出发
-            else:
-                break
-        return car_candidate
+        finish = 0  # 判断是否接收完成
+        from_v_num = len(max(self.car_from_v.values(), key=len))  # 计算出各个节点的车辆数目
+        temp = self.limit_num - sch.cars_on_road  # 探测当前道路上的车的数量是否饱和
+        lenth = 0
+        if temp > 500:  # 如果待发的车距离路上控制的车辆数超过500辆，那么均匀发车50辆
+            self.togo_num += 50
+            for index in range(from_v_num):  # 对各个节点的车辆均匀发车
+                for item in self.car_from_v:
+                    # else :
+                    #     self.togo_num+=self.togo_num
+                    if lenth < self.togo_num:  # 待出发的车辆数量在累计
+                        if index < len(self.car_from_v[item]):  # 访问各个节点的车辆
+                            car_id = self.car_from_v[item][index]
+                            if CAR_DICT[car_id].plan_time <= TIME and not CAR_DICT[car_id].is_out:
+                                car_candidate.append(car_id)
+                                lenth += 1
+                    else:
+                        finish = 1
+                        break
+                if finish:
+                    break
+        else:  ##如果待发的车距离路上控制的车辆数不足500辆，那么尽可能局部发车
+            self.togo_num = temp
+            for i in range(1, 9):  # 均分成8块
+                for index in range(from_v_num // 8 * (i - 1), from_v_num // 8 * i):
+                    for item in self.car_from_v:
+                        if lenth < self.togo_num:  # 待出发的车辆数量在累计,lenth表示待出发的车辆数
+                            if index < len(self.car_from_v[item]):  # 访问各个节点的车辆
+                                car_id = self.car_from_v[item][index]
+                                if CAR_DICT[car_id].plan_time <= TIME and not CAR_DICT[car_id].is_out:
+                                    car_candidate.append(car_id)
+                                    lenth += 1
+                        else:
+                            finish = 1
+                            break
+                    if finish:
+                        break
+                if finish:
+                    break
+        res = self.path_filter(car_candidate)
+        return res
 
-    # def receive(self,back_car):
-    #     for back_car_id in back_car:
-    #         CAR_DICT[back_car_id].is_out = False
+    def path_filter(self, car):
+        res = []
+        for car_id in sorted(car):
+            # 调用康哥findpath找到路径 设置car的plan_path
+            cur_car = CAR_DICT[car_id]
+            short = ShortestPath(cur_car, CROSS_DICT)
+            res.append([car_id, short[0], short[1]])
+        ans = sorted(res, key=lambda d: d[1])[:(self.togo_num >> 1)  + 50]
+        return ans
+
+    def receive(self, back_car):
+        for back_car_id in back_car:
+            CAR_DICT[back_car_id].is_out = False
 
 
 
