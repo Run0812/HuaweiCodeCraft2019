@@ -3,7 +3,6 @@
 *.dat
 *.dir
 handle_stuck.py
-HeapDict.py
 test_traffic.py
 motorcade.py
 .pytest_cache/:
