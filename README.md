@@ -22,5 +22,7 @@
 4. 运算速度慢，计算路径的方法不够快，可以使用斐波那契堆对Dijstrak算法加速，也可以使用其他算法计算近似最短路径
 
 ## 队伍成员
-- https://github.com/DDWafer
+### Xukangjune
 - https://github.com/xukangjune
+### DDWafer
+- https://github.com/DDWafer
